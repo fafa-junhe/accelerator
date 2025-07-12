@@ -458,6 +458,10 @@ class UploadThread: public IThread
 					if (log) fprintf(log, "Failed to locally process crash dump");
 					break;
 				case kPRRemoteError:
+					failed++;
+					g_pSM->LogError(myself, "Accelerator failed to presubmit crash dump");
+					if (log) fprintf(log, "Failed to presubmit crash dump");
+					break;
 				case kPRUploadCrashDumpAndMetadata:
 				case kPRUploadMetadataOnly:
 					if (UploadCrashDump((presubmitResponse == kPRUploadMetadataOnly) ? nullptr : path, metapath, presubmitToken, response, sizeof(response))) {
@@ -898,10 +902,14 @@ class UploadThread: public IThread
 		const char *minidumpUrl = g_pSM->GetCoreConfigValue("MinidumpUrl");
 		if (!minidumpUrl) minidumpUrl = "http://crash.limetech.org/submit";
 
+		if (log) fprintf(log, "Presubmitting to %s with signature: %s\n", minidumpUrl, summaryLine.c_str());
+		if (log) fflush(log);
+
 		bool uploaded = xfer->PostAndDownload(minidumpUrl, form, &data, NULL);
 
 		if (!uploaded) {
 			if (log) fprintf(log, "Presubmit failed: %s (%d)\n", xfer->LastErrorMessage(), xfer->LastErrorCode());
+			if (log) fflush(log);
 			return kPRRemoteError;
 		}
 
@@ -912,7 +920,8 @@ class UploadThread: public IThread
 		while (responseSize > 0 && response[responseSize - 1] == '\n') {
 			response[--responseSize] = '\0';
 		}
-		//if (log) fprintf(log, "Presubmit complete: %s\n", response);
+		if (log) fprintf(log, "Presubmit complete, raw response: %s\n", response);
+		if (log) fflush(log);
 
 		if (responseSize < 2) {
 			if (log) fprintf(log, "Presubmit response too short\n");
