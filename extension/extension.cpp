@@ -811,10 +811,7 @@ class UploadThread: public IThread
 		google_breakpad::ProcessResult processResult;
 		google_breakpad::MinidumpProcessor minidumpProcessor(nullptr, nullptr);
 
-		{
-			ClogInhibitor clogInhibitor;
-			processResult = minidumpProcessor.Process(path, &processState);
-		}
+		processResult = minidumpProcessor.Process(path, &processState);
 
 		if (processResult != google_breakpad::PROCESS_OK) {
 			return kPRLocalError;
