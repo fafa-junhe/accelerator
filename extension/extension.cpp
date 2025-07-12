@@ -818,6 +818,8 @@ class UploadThread: public IThread
 		processResult = minidumpProcessor.Process(path, &processState);
 
 		if (processResult != google_breakpad::PROCESS_OK) {
+			if (log) fprintf(log, "minidumpProcessor.Process failed with result: %d\n", processResult);
+			if (log) fflush(log);
 			return kPRLocalError;
 		}
 
@@ -830,14 +832,18 @@ class UploadThread: public IThread
 			}
 			cpu_arch = processState.system_info()->cpu;
 		}
+		if (log) fprintf(log, "OS: %s, CPU: %s\n", os_short.c_str(), cpu_arch.c_str());
 
 		int requestingThread = processState.requesting_thread();
 		if (requestingThread == -1) {
 			requestingThread = 0;
 		}
+		if (log) fprintf(log, "Requesting thread: %d\n", requestingThread);
 
 		const google_breakpad::CallStack *stack = processState.threads()->at(requestingThread);
 		if (!stack) {
+			if (log) fprintf(log, "Could not get stack for thread %d\n", requestingThread);
+			if (log) fflush(log);
 			return kPRLocalError;
 		}
 
@@ -845,6 +851,7 @@ class UploadThread: public IThread
 		if (frameCount > 1024) {
 			frameCount = 1024;
 		}
+		if (log) fprintf(log, "Frame count: %d\n", frameCount);
 
 		std::ostringstream summaryStream;
 		summaryStream << 2 << "|" << processState.time_date_stamp() << "|" << os_short << "|" << cpu_arch << "|" << processState.crashed() << "|" << processState.crash_reason() << "|" << std::hex << processState.crash_address() << std::dec << "|" << requestingThread;
@@ -852,6 +859,7 @@ class UploadThread: public IThread
 		std::map<const google_breakpad::CodeModule *, unsigned int> moduleMap;
 
 		unsigned int moduleCount = processState.modules() ? processState.modules()->module_count() : 0;
+		if (log) fprintf(log, "Module count: %d\n", moduleCount);
 		for (unsigned int moduleIndex = 0; moduleIndex < moduleCount; ++moduleIndex) {
 			auto module = processState.modules()->GetModuleAtIndex(moduleIndex);
 			moduleMap[module] = moduleIndex;
@@ -867,6 +875,7 @@ class UploadThread: public IThread
 			}
 
 			summaryStream << "|M|" << debugFile << "|" << debugIdentifier;
+			if (log) fprintf(log, "Module %d: %s (%s)\n", moduleIndex, debugFile.c_str(), debugIdentifier.c_str());
 		}
 
 		for (int frameIndex = 0; frameIndex < frameCount; ++frameIndex) {
@@ -952,6 +961,14 @@ class UploadThread: public IThread
 			if (log) fprintf(log, "Response module list doesn't match sent list (%d < %d)\n", responseCount, moduleCount);
 			delete[] response;
 			return presubmitResponse;
+		}
+
+		if ((presubmitResponse == kPRUploadCrashDumpAndMetadata || presubmitResponse == kPRUploadMetadataOnly) &&
+			(responseCount <= moduleCount || response[2 + moduleCount] != '|'))
+		{
+			if (log) fprintf(log, "Presubmit response asks for upload but provides no token.\n");
+			delete[] response;
+			return kPRRemoteError;
 		}
 
 		// There was a presubmit token included.
@@ -1041,10 +1058,14 @@ class UploadThread: public IThread
 		if (log) fflush(log);
 
 		delete[] response;
+		if (log) fprintf(log, "Final presubmit response enum: %d\n", presubmitResponse);
+		if (log) fflush(log);
 		return presubmitResponse;
 	}
 
 	bool UploadCrashDump(const char *path, const char *metapath, const char *presubmitToken, char *response, int maxlen) {
+		if (log) fprintf(log, "UploadCrashDump called. path=%s, metapath=%s, presubmitToken=%s\n", path ? path : "null", metapath ? metapath : "null", presubmitToken ? presubmitToken : "null");
+		if (log) fflush(log);
 		IWebForm *form = webternet->CreateForm();
 
 		const char *minidumpAccount = g_pSM->GetCoreConfigValue("MinidumpAccount");
