@@ -858,6 +858,13 @@ class UploadThread: public IThread
 			auto debugFile = google_breakpad::PathnameStripper::File(module->debug_file());
 			auto debugIdentifier = module->debug_identifier();
 
+			if (debugFile.empty()) {
+				debugFile = "EMPTY_FILE";
+			}
+			if (debugIdentifier.empty()) {
+				debugIdentifier = "EMPTY_ID";
+			}
+
 			summaryStream << "|M|" << debugFile << "|" << debugIdentifier;
 		}
 
