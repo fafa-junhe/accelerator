@@ -956,36 +956,34 @@ class UploadThread: public IThread
 			return kPRRemoteError;
 		}
 
-		unsigned int responseCount = responseSize - 2;
-		if (responseCount < moduleCount) {
-			if (log) fprintf(log, "Response module list doesn't match sent list (%d < %d)\n", responseCount, moduleCount);
-			delete[] response;
-			return presubmitResponse;
+		char* modulePart = &response[2];
+		char* tokenPart = strchr(modulePart, '|');
+
+		if (!tokenPart) {
+			// This case means the response is something like "Y|UUY" with no token.
+			// This is valid if no upload is requested.
+			if (presubmitResponse == kPRUploadCrashDumpAndMetadata || presubmitResponse == kPRUploadMetadataOnly) {
+				if (log) fprintf(log, "Presubmit response asks for upload but provides no token separator.\n");
+				delete[] response;
+				return kPRRemoteError;
+			}
+		} else {
+			// Found a token separator.
+			*tokenPart = '\0'; // Null-terminate the module part.
+			tokenPart++; // Move to the start of the token.
+
+			if (tokenBuffer) {
+				strncpy(tokenBuffer, tokenPart, tokenBufferLength);
+				tokenBuffer[tokenBufferLength - 1] = '\0';
+				if (log) fprintf(log, "Got a presubmit token from server: %s\n", tokenBuffer);
+				if (log) fflush(log);
+			}
 		}
 
-		if ((presubmitResponse == kPRUploadCrashDumpAndMetadata || presubmitResponse == kPRUploadMetadataOnly) &&
-			(responseCount <= moduleCount || response[2 + moduleCount] != '|'))
-		{
-			if (log) fprintf(log, "Presubmit response asks for upload but provides no token.\n");
-			delete[] response;
-			return kPRRemoteError;
-		}
-
-		// There was a presubmit token included.
-		if (tokenBuffer && responseCount > moduleCount && response[2 + moduleCount] == '|') {
-			int tokenStart = 2 + moduleCount + 1;
-			int tokenEnd = tokenStart;
-			while (tokenEnd < responseSize && response[tokenEnd] != '|') {
-				tokenEnd++;
-			}
-
-			size_t tokenLength = tokenEnd - tokenStart;
-			if (tokenLength < tokenBufferLength) {
-				strncpy(tokenBuffer, &response[tokenStart], tokenLength);
-				tokenBuffer[tokenLength] = '\0';
-			}
-
-			if (log) fprintf(log, "Got a presubmit token from server: %s\n", tokenBuffer);
+		unsigned int responseModuleCount = strlen(modulePart);
+		if (responseModuleCount < moduleCount) {
+			if (log) fprintf(log, "Response module list is shorter than sent list (%d < %d)\n", responseModuleCount, moduleCount);
+			if (log) fflush(log);
 		}
 
 		if (moduleCount > 0) {
@@ -1004,11 +1002,15 @@ class UploadThread: public IThread
 			bool canBinarySubmit = !binarySubmitOption || (tolower(binarySubmitOption[0]) == 'y' || binarySubmitOption[0] == '1');
 
 			for (unsigned int moduleIndex = 0; moduleIndex < moduleCount; ++moduleIndex) {
+				if (moduleIndex >= responseModuleCount) {
+					break;
+				}
+
 				bool submitSymbols = false;
-				bool submitBinary = (response[2 + moduleIndex] == 'U');
+				bool submitBinary = (modulePart[moduleIndex] == 'U');
 
 #if defined _LINUX
-				submitSymbols = (response[2 + moduleIndex] == 'Y');
+				submitSymbols = (modulePart[moduleIndex] == 'Y');
 #endif
 
 				if (!submitSymbols && !submitBinary) {
